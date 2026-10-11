@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
+import { statSync } from "node:fs";
+import path from "node:path";
 import { redactCollectorText } from "../collectors/normalizer.js";
 import type { AgentId } from "../domain/ids.js";
 import type { ReasoningEffort } from "../domain/model-profile.js";
@@ -54,6 +56,14 @@ export function herdrAgentName(agent: AgentId, launchToken: string): string {
   return `router-${herdrAgentKind(agent)}-${suffix}`;
 }
 
+function isDirectory(dir: string): boolean {
+  try {
+    return statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 const HANDOFF_TIMEOUT_MS = 30_000;
 /**
  * How long `herdr-send` waits for a busy agent to go idle before a follow-up. Together with
@@ -69,7 +79,10 @@ export interface LaunchResult {
   launchToken?: string;
   paneId?: string;
   agentName?: string;
-  /** The text reached the agent but it could not be confirmed to start; never resend. */
+  /**
+   * The text reached the agent, or may have, but it could not be confirmed to start; never
+   * resend. The pane counts as live: its session is recorded as launched.
+   */
   sentUnconfirmed?: boolean;
 }
 
@@ -86,8 +99,10 @@ export async function launchRoutedAgent(input: {
   /**
    * Working directory for a new pane (`herdr pane split --cwd`). Callers should always pass
    * it: omitted, Herdr starts the pane in the directory of the pane it splits, which for a
-   * reused `router-anchor` workspace is whatever repository that anchor pane is in. Ignored
-   * when `existingPaneId` is set.
+   * reused `router-anchor` workspace is whatever repository that anchor pane is in. A
+   * relative path is resolved against this process's directory, since the Herdr server would
+   * otherwise resolve it against its own. A path that is not an existing directory fails the
+   * launch before any pane is created. Ignored when `existingPaneId` is set.
    */
   cwd?: string;
 }): Promise<LaunchResult> {
@@ -100,12 +115,17 @@ export async function launchRoutedAgent(input: {
     effort: input.effort,
   });
   const printed = redactCollectorText(`start ${command.join(" ")}; send handoff: ${input.handoff}`);
+  // A follow-up to a pane given without a launch token reuses an agent this launch did not
+  // start: there is no token to keep and no name to derive from one.
+  const paneOnly = input.existingPaneId !== undefined && input.existingLaunchToken === undefined;
   const launchToken =
     input.existingLaunchToken ?? `launch_${Date.now()}_${randomBytes(4).toString("hex")}`;
   if (input.dryRun) {
+    if (paneOnly) {
+      return { ok: true, paneCreated: false, printed };
+    }
     return { ok: true, paneCreated: false, printed, launchToken };
   }
-  const agentName = herdrAgentName(input.agent, launchToken);
   const herdr =
     input.herdr ??
     createHerdrClient(async () => ({
@@ -114,22 +134,44 @@ export async function launchRoutedAgent(input: {
       stdout: "",
       stderr: "herdr command adapter was not injected",
     }));
-  if (input.existingPaneId) {
+  if (input.existingPaneId !== undefined) {
+    if (paneOnly) {
+      // Address the pane itself, now and in any wait after the send. Record the agent's real
+      // Herdr name only when Herdr reports one for that same pane, never a derived one.
+      const info = await herdr.getAgent?.(input.existingPaneId);
+      const realName = info?.paneId === input.existingPaneId ? info.name : undefined;
+      return sendFollowUp({
+        herdr,
+        paneId: input.existingPaneId,
+        target: input.existingPaneId,
+        ...(realName ? { agentName: realName } : {}),
+        text: input.handoff,
+        printed,
+      });
+    }
+    // An agent started by this launch token has a known name.
+    const agentName = herdrAgentName(input.agent, launchToken);
     return sendFollowUp({
       herdr,
       paneId: input.existingPaneId,
-      // An agent started by this launch token has a known name; otherwise address the pane.
-      target: input.existingLaunchToken ? agentName : input.existingPaneId,
+      target: agentName,
       agentName,
       text: input.handoff,
       printed,
       launchToken,
     });
   }
-  const split =
-    input.cwd === undefined
-      ? await herdr.splitCurrent()
-      : await herdr.splitCurrent({ cwd: input.cwd });
+  const agentName = herdrAgentName(input.agent, launchToken);
+  const cwd = input.cwd === undefined ? undefined : path.resolve(input.cwd);
+  if (cwd !== undefined && !isDirectory(cwd)) {
+    // Never fall back to whatever directory the split pane would inherit.
+    return {
+      ok: false,
+      error: `launch directory ${cwd} does not exist or is not a directory; no pane was opened`,
+      launchToken,
+    };
+  }
+  const split = cwd === undefined ? await herdr.splitCurrent() : await herdr.splitCurrent({ cwd });
   if (!split.ok) {
     return { ok: false, error: herdrError(split, "herdr pane split failed"), launchToken };
   }
@@ -240,19 +282,22 @@ async function sendFollowUp(input: {
   herdr: HerdrClient;
   paneId: string;
   target: string;
-  agentName: string;
+  /** Omitted for a pane whose agent name is not known; that pane is then addressed by id. */
+  agentName?: string;
   text: string;
   printed: string;
-  launchToken: string;
+  /** Omitted for a pane given without the launch token that started its agent. */
+  launchToken?: string;
 }): Promise<LaunchResult> {
   const where = `${input.target === input.paneId ? "the agent" : `agent ${input.target}`} in pane ${input.paneId}`;
+  // `printed` only on success: callers show `printed ?? error`, and a failure must show why.
   const base = {
-    launchToken: input.launchToken,
+    ...(input.launchToken ? { launchToken: input.launchToken } : {}),
     paneId: input.paneId,
     paneCreated: false,
-    printed: input.printed,
-    agentName: input.agentName,
+    ...(input.agentName ? { agentName: input.agentName } : {}),
   };
+  const sentOk = { ok: true, ...base, printed: input.printed };
   const sent = await input.herdr.send({
     target: input.target,
     text: input.text,
@@ -261,7 +306,7 @@ async function sendFollowUp(input: {
   });
   switch (sent.result) {
     case "ok":
-      return { ok: true, ...base };
+      return sentOk;
     case "refused": {
       const hint = REFUSAL_HINTS[sent.reason ?? ""] ?? "herdr-send refused to type into the pane";
       return {
@@ -273,9 +318,10 @@ async function sendFollowUp(input: {
       };
     }
     case "timeout":
-      // A deadline hit while still busy is herdr-send's --wait-idle limit: nothing was sent.
-      // Otherwise the prompt was accepted and Herdr saw the agent start working (a submission
-      // with no activity is reported as sent_unconfirmed instead); it is still on that turn.
+      // herdr-send reports the state it decided on: `busy` when its --wait-idle deadline passed
+      // (nothing was sent), `idle` when it sent and `herdr agent prompt --wait` then timed out
+      // with the agent working on that turn (a submission with no activity is sent_unconfirmed
+      // instead).
       if (sent.state === "busy") {
         return {
           ok: false,
@@ -285,7 +331,20 @@ async function sendFollowUp(input: {
             "Run the next phase again once it is idle.",
         };
       }
-      return { ok: true, ...base };
+      if (sent.state === "idle") {
+        return sentOk;
+      }
+      // No readable state (broken or missing JSON, or a state herdr-send does not emit here):
+      // the text may or may not have been typed. Not a success, and never a resend.
+      return {
+        ok: false,
+        ...base,
+        sentUnconfirmed: true,
+        error:
+          `herdr-send timed out on ${where} without saying whether the follow-up was sent ` +
+          `(exit 3${describeSendFailure(sent) ? `, ${describeSendFailure(sent)}` : ""}). ` +
+          "Do not resend it; check that pane first.",
+      };
     case "sent_unconfirmed": {
       // The text was submitted; resending would duplicate it. Give the agent one more window.
       const started = await input.herdr.waitFor({
@@ -294,7 +353,7 @@ async function sendFollowUp(input: {
         timeoutMs: HANDOFF_TIMEOUT_MS,
       });
       if (started.ok) {
-        return { ok: true, ...base };
+        return sentOk;
       }
       return {
         ok: false,

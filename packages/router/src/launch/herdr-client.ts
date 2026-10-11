@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, statSync } from "node:fs";
 import path from "node:path";
 
 export interface CommandResult {
@@ -44,6 +44,11 @@ export interface HerdrClient {
     waitIdleSec: number;
     timeoutMs: number;
   }): Promise<HerdrSendResult>;
+  /**
+   * `herdr agent get <target>`; undefined when Herdr does not report an agent there. Optional
+   * so a client without it still works: callers then keep addressing the pane id.
+   */
+  getAgent?(target: string): Promise<HerdrAgentInfo | undefined>;
 }
 
 /**
@@ -73,8 +78,9 @@ const HERDR_SEND_RESULTS = new Set(["ok", "refused", "timeout", "sent_unconfirme
 
 function isExecutable(file: string): boolean {
   try {
+    // X_OK alone also passes for a directory, which cannot be spawned.
     accessSync(file, constants.X_OK);
-    return true;
+    return statSync(file).isFile();
   } catch {
     return false;
   }
@@ -82,7 +88,9 @@ function isExecutable(file: string): boolean {
 
 /**
  * Finds `herdr-send`: `HERDR_SEND_BIN` (a path, or a name looked up on PATH) overrides the
- * default `herdr-send` on PATH. Returns the absolute path, or a message saying what is missing.
+ * default `herdr-send` on PATH. Returns the path as found (a relative HERDR_SEND_BIN or a
+ * relative PATH entry stays relative to the current directory), or a message saying what is
+ * missing.
  */
 export function resolveHerdrSendBin(
   env: NodeJS.Dict<string>,
@@ -251,6 +259,10 @@ export function createHerdrClient(
     closePane(paneId) {
       return runCommand(["herdr", "pane", "close", paneId]);
     },
+    async getAgent(target) {
+      const result = await runCommand(["herdr", "agent", "get", target]);
+      return result.ok ? parseHerdrAgentInfo(result.stdout) : undefined;
+    },
     async send(input) {
       if (options.herdrSendMissing !== undefined) {
         return { result: "unavailable", code: 127, detail: options.herdrSendMissing };
@@ -274,9 +286,12 @@ export function createHerdrClient(
 
 /** What `herdr agent get` reports about a running agent. */
 export interface HerdrAgentInfo {
+  /** The agent kind, e.g. claude or codex. */
   agent: string;
   status: HerdrAgentState;
   paneId: string;
+  /** The agent's Herdr name (`herdr agent start <name>`), when Herdr reports one. */
+  name?: string;
 }
 
 /** Controls an already-running agent pane; used by in-place effort switching. */
@@ -300,6 +315,7 @@ export function parseHerdrAgentInfo(stdout: string): HerdrAgentInfo | undefined 
           agent?: unknown;
           agent_status?: unknown;
           pane_id?: unknown;
+          name?: unknown;
         };
       };
     };
@@ -314,6 +330,7 @@ export function parseHerdrAgentInfo(stdout: string): HerdrAgentInfo | undefined 
       agent: agent.agent,
       status,
       paneId: agent.pane_id,
+      ...(typeof agent.name === "string" && agent.name.length > 0 ? { name: agent.name } : {}),
     };
   } catch {
     return undefined;
