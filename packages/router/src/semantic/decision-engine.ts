@@ -40,6 +40,7 @@ export type RouteDecisionResult =
       confidence: number;
       reason: string;
       sticky: boolean;
+      trace?: { fallbackUsed: boolean };
     }
   | {
       status: "ask-user";
@@ -212,11 +213,17 @@ export async function decideRoute(input: DecideRouteInput): Promise<RouteDecisio
     });
   } catch {
     return {
-      status: "typesafe-unavailable",
-      fallback: deterministicFallback({
-        family,
-        candidates: input.candidates,
-      }),
+      status: "selected",
+      candidateOpaqueId: selected.opaqueId,
+      effort: selected.supportedEfforts.includes("low")
+        ? "low"
+        : (selected.supportedEfforts[0] ?? "medium"),
+      phase,
+      family,
+      confidence: route.confidence,
+      reason: `TypeSafe selected ${selected.opaqueId}; default effort used after effort selection failed`,
+      sticky: false,
+      trace: { fallbackUsed: true },
     };
   }
   const effort = effortResponse.answers.effort.choice as ReasoningEffort;
