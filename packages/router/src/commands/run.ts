@@ -1,3 +1,4 @@
+import { primaryQuota } from "../policy/primary-quota.js";
 import { randomUUID } from "node:crypto";
 import { runCommand as defaultRunCommand, type runCommand } from "../collectors/command-runner.js";
 import { redactCollectorText } from "../collectors/normalizer.js";
@@ -49,6 +50,7 @@ import {
 } from "../workspace/git-worktree.js";
 
 export interface RunDeps {
+  usageMaxAgeMs?: number;
   accounts: Account[];
   models: ModelProfile[];
   usage: Record<string, UsageSnapshot>;
@@ -257,10 +259,15 @@ export async function executeRun(
       ? toShapes({ churn: resolution.churn, changedFiles: resolution.changedFiles })
       : undefined;
   const reservations = deps.reservations ?? new ReservationService();
+  const quotaPolicy = primaryQuota(deps.accounts, deps.usage, now, deps.usageMaxAgeMs);
   const eligible = [];
   const exclusions = [];
   const ownerMessages = new Map<string, string>();
   for (const account of deps.accounts) {
+    if (account.agent === "cursor" && !quotaPolicy.cursorAllowed) {
+      exclusions.push({ accountId: account.id, reason: "primary-quota-policy" });
+      continue;
+    }
     if (deps.activityClient) {
       const activity = await readSharedActivity({
         account,
@@ -301,6 +308,7 @@ export async function executeRun(
         usage: usageWithReservations,
         estimatedCostRatio,
         now,
+        usageMaxAgeMs: deps.usageMaxAgeMs,
       });
       if (result.eligible) {
         eligible.push({
@@ -317,9 +325,9 @@ export async function executeRun(
   }
   if (eligible.length === 0) {
     return {
-      code: 2,
-      output: `No eligible route. Exclusions: ${JSON.stringify(exclusions)}`,
-      json: { ok: false, exclusions },
+      code: 75,
+      output: `${quotaPolicy.status}: ${quotaPolicy.reason} Retry at: ${quotaPolicy.retryAt ?? "unknown"}. Exclusions: ${JSON.stringify(exclusions)}`,
+      json: { ok: false, ...quotaPolicy, exclusions },
     };
   }
   // Only the root task can unlock max/ultra; a continued task, which an agent writes, never does.
@@ -377,19 +385,34 @@ export async function executeRun(
   if (!selected) {
     return { code: 2, output: "Selected candidate is no longer eligible.", json: { ok: false } };
   }
+  const revalidationNow = deps.now ?? new Date();
+  const latestQuotaPolicy = primaryQuota(
+    deps.accounts,
+    deps.usage,
+    revalidationNow,
+    deps.usageMaxAgeMs,
+  );
+  if (selected.account.agent === "cursor" && !latestQuotaPolicy.cursorAllowed) {
+    return {
+      code: 75,
+      output: latestQuotaPolicy.reason,
+      json: { ok: false, ...latestQuotaPolicy },
+    };
+  }
   const revalidated = revalidateDecision({
     account: selected.account,
     model: selected.model,
     usage: deps.usage[selected.account.id]!,
     estimatedCostRatio: selected.estimatedCostRatio,
     selectedEffort: decision.effort,
-    now,
+    usageMaxAgeMs: deps.usageMaxAgeMs,
+    now: revalidationNow,
   });
   if (!revalidated.ok) {
     return {
-      code: 2,
+      code: revalidated.reason === "stale-usage" || revalidated.reason === "unknown-usage" ? 75 : 2,
       output: `Launch revalidation failed: ${revalidated.reason}`,
-      json: { ok: false, reason: revalidated.reason },
+      json: { ok: false, status: "usage-unavailable", reason: revalidated.reason },
     };
   }
   const remaining = remainingRatio(deps.usage[selected.account.id]!, selected.model.quotaPool);

@@ -492,7 +492,7 @@ describe.skipIf(resolveHerdrSendBin(process.env).bin === undefined)("real herdr-
     expect(calls().some((argv) => argv[1] === "prompt")).toBe(false);
   });
 
-  it("exit 4 reports sent_unconfirmed with the screen hint", async () => {
+  it("exit 4 reports sent_unconfirmed when the wrapper omits an optional screen hint", async () => {
     const client = run({ FAKE_STATUS: "idle", FAKE_PROMPT_ERROR: "agent_prompt_stalled" });
     const sent = await client.send({ target: "w1:p3", text: "t", waitIdleSec: 15, timeoutMs: 1 });
     expect(sent).toEqual({
@@ -500,7 +500,6 @@ describe.skipIf(resolveHerdrSendBin(process.env).bin === undefined)("real herdr-
       code: 4,
       reason: "agent_prompt_stalled",
       state: "idle",
-      confirmedByScreen: false,
     });
   });
 });

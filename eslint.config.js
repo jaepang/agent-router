@@ -17,9 +17,15 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     // Plugin helper scripts run under Node outside the TypeScript workspaces.
-    files: ["herdr-plugin/**/*.mjs"],
+    files: ["herdr-plugin/**/*.mjs", "packages/router/scripts/**/*.mjs"],
     languageOptions: {
-      globals: { process: "readonly" },
+      globals: {
+        process: "readonly",
+        queueMicrotask: "readonly",
+        fetch: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+      },
     },
   },
   {

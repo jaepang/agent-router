@@ -13,6 +13,7 @@ import type { UsageCollector } from "./types.js";
 export interface CollectorRegistryOptions {
   runCommand?: typeof runCommand;
   browserCollector?: UsageCollector;
+  quotaMaxAgeMs?: number;
   cursorQuotaCachePath?: string;
   claudeQuotaCachePath?: string;
   codexQuotaCachePath?: string;
@@ -56,13 +57,28 @@ export function collectorsForAccount(
         return [opencodeCollector];
       }
       if (account.agent === "cursor") {
-        return [createCursorStatuslineCollector({ cachePath: options.cursorQuotaCachePath })];
+        return [
+          createCursorStatuslineCollector({
+            maxAgeMs: options.quotaMaxAgeMs,
+            cachePath: options.cursorQuotaCachePath,
+          }),
+        ];
       }
       if (account.agent === "claude-code") {
-        return [createClaudeStatuslineCollector({ cachePath: options.claudeQuotaCachePath })];
+        return [
+          createClaudeStatuslineCollector({
+            maxAgeMs: options.quotaMaxAgeMs,
+            cachePath: options.claudeQuotaCachePath,
+          }),
+        ];
       }
       if (account.agent === "codex") {
-        return [createCodexStatuslineCollector({ cachePath: options.codexQuotaCachePath })];
+        return [
+          createCodexStatuslineCollector({
+            maxAgeMs: options.quotaMaxAgeMs,
+            cachePath: options.codexQuotaCachePath,
+          }),
+        ];
       }
       return [];
     }

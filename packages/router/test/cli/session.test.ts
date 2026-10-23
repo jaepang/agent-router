@@ -1,3 +1,4 @@
+import { weeklyExhaustedAccounts, weeklyExhaustedUsage } from "./fixtures.js";
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,9 +20,9 @@ function runDeps(home: string, env: NodeJS.Dict<string>) {
     db,
     deps: {
       home,
-      accounts: [personal],
+      accounts: [personal, ...weeklyExhaustedAccounts],
       models: [cursorModel],
-      usage: { [personal.id]: usageFor(personal.id, 0.8) },
+      usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
       client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
       env,
       now,
@@ -284,7 +285,7 @@ describe("phase handoffs between router sessions", () => {
       runDeps: {
         accounts: [],
         models: [],
-        usage: {},
+        usage: { ...weeklyExhaustedUsage },
         client: fakeTypeSafe({}),
         env: {},
       },

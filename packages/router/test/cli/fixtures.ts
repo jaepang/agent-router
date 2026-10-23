@@ -147,3 +147,35 @@ export function fakeTypeSafe(script: {
     },
   };
 }
+
+// Cursor launch/session tests model the only permitted fallback: both primary
+// CLIs have freshly observed weekly exhaustion. They are not rank candidates.
+export const weeklyExhaustedAccounts = (["codex", "claude-code"] as const).map((agent) =>
+  AccountSchema.parse({
+    ...personal,
+    id: `exhausted_${agent}`,
+    agent,
+    enabledModels: ["unlisted:test"],
+  }),
+);
+export const weeklyExhaustedUsage = Object.fromEntries(
+  weeklyExhaustedAccounts.map((account) => [
+    account.id,
+    usageFor(account.id, 0, { windows: [{ kind: "weekly", remainingRatio: 0 }] }),
+  ]),
+);
+
+export const codexModel = ModelProfileSchema.parse({
+  ...cursorModel,
+  id: "openai:gpt-6",
+  provider: "openai",
+  agent: "codex",
+  launchName: "gpt-6",
+});
+export const codexPersonal = AccountSchema.parse({
+  ...personal,
+  id: "acct_codex",
+  provider: "openai",
+  agent: "codex",
+  enabledModels: [codexModel.id],
+});

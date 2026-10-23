@@ -6,6 +6,9 @@ const CLAUDE_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high", "xhigh
 const CODEX_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high", "xhigh", "max", "ultra"]);
 
 export function cursorModelId(launchName: string, effort: ReasoningEffort): string {
+  if (/claude|gpt|gemini/i.test(launchName)) {
+    throw new Error("Cursor model refused: claude, gpt and gemini families are forbidden");
+  }
   if (effort === "none" || /^cursor-.+-(none|low|medium|high|ultra)$/.test(launchName)) {
     return launchName;
   }

@@ -167,6 +167,7 @@ export async function createDefaultRunDeps(
     overrides.collectorsForAccount ??
     ((account: Account) =>
       defaultCollectorsForAccount(account, {
+        quotaMaxAgeMs: (config.usageMaxAgeSeconds ?? 1800) * 1000,
         runCommand: overrides.runCommand,
         browserCollector: createBrowserDashboardCollector({
           approvedBridge: env.MODEL_ROUTER_BROWSER_BRIDGE === "1",
@@ -185,9 +186,7 @@ export async function createDefaultRunDeps(
   const db = openDatabase({ home: config.home });
   const usageRepo = new UsageRepository(db);
   for (const snapshot of snapshots) {
-    if (snapshot.certainty !== "unknown") {
-      usageRepo.save(snapshot);
-    }
+    usageRepo.save(snapshot);
   }
   // The configured reference (for example keychain:model-router-typesafe) works in every
   // pane without exporting the key; TYPESAFE_API_KEY remains a fallback.
@@ -230,6 +229,7 @@ export async function createDefaultRunDeps(
   }
   return {
     typesafeKeyHint,
+    usageMaxAgeMs: (config.usageMaxAgeSeconds ?? 1800) * 1000,
     sessions: overrides.sessions ?? new SessionRepository(db),
     reservations: new ReservationService(Date.now, new ReservationRepository(db)),
     accounts: config.accounts,

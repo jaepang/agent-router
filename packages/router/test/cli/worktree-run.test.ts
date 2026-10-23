@@ -1,3 +1,4 @@
+import { weeklyExhaustedAccounts, weeklyExhaustedUsage } from "./fixtures.js";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -92,9 +93,9 @@ function setup(options: { repoName?: string; base?: string } = {}) {
   const reservations = new ReservationService(Date.now, new ReservationRepository(db));
   const herdr = fakeHerdr();
   const deps: RunDeps = {
-    accounts: [personal],
+    accounts: [personal, ...weeklyExhaustedAccounts],
     models: [cursorModel],
-    usage: { [personal.id]: usageFor(personal.id, 0.8) },
+    usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
     client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
     env: { HERDR_ENV: "1" },
     now,
@@ -536,11 +537,12 @@ describe("continuing an isolated session", () => {
 
   it("lets the next phase use a different agent in the same worktree", async () => {
     const ctx = setup();
-    ctx.deps.accounts = [personal, shared];
+    ctx.deps.accounts = [personal, shared, weeklyExhaustedAccounts[0]!];
     ctx.deps.models = [cursorModel, claudeModel];
     ctx.deps.usage = {
+      ...weeklyExhaustedUsage,
       [personal.id]: usageFor(personal.id, 0.8),
-      [shared.id]: usageFor(shared.id, 0.95),
+      [shared.id]: usageFor(shared.id, 0, { windows: [{ kind: "weekly", remainingRatio: 0 }] }),
     };
     ctx.deps.client = fakeTypeSafe({
       family: "planning",
@@ -555,6 +557,7 @@ describe("continuing an isolated session", () => {
     const next = await run(
       {
         ...ctx.deps,
+        usage: { ...ctx.deps.usage, [shared.id]: usageFor(shared.id, 0.95) },
         client: fakeTypeSafe({
           family: "implementation",
           phase: "implementation",
@@ -835,7 +838,7 @@ describe("quota and reservations with --worktree", () => {
     const plain = await executeRun("Implement A.", { dryRun: false }, ctx.deps);
     const isolated = await run(ctx.deps, "Implement B.");
     const preview = await run(ctx.deps, "Implement C.", { dryRun: true });
-    expect(plain.code).toBe(2);
+    expect(plain.code).toBe(75);
     expect(plain.output).toMatch(/below-reserve/);
     expect(isolated.code).toBe(plain.code);
     expect(isolated.output).toBe(plain.output);
@@ -872,7 +875,13 @@ describe("router run --worktree from the CLI", () => {
   it("passes the flag through only when it is set", async () => {
     const runSpy = vi.fn(async () => ({ output: "ok", json: {}, code: 0 }));
     const silent = { write: () => true };
-    const runDeps = { accounts: [], models: [], usage: {}, client: fakeTypeSafe({}), env: {} };
+    const runDeps = {
+      accounts: [],
+      models: [],
+      usage: { ...weeklyExhaustedUsage },
+      client: fakeTypeSafe({}),
+      env: {},
+    };
     const home = tempDir();
     await runCli(["node", "router", "run", "Do it", "--worktree", "--dry-run"], {
       stdout: silent,

@@ -8,7 +8,7 @@ import { normalizeUsage } from "../normalizer.js";
 import type { UsageCollector } from "../types.js";
 
 // Written by a user's Claude Code status line script from its rate_limits payload.
-export const CLAUDE_QUOTA_MAX_AGE_MS = 15 * 60_000;
+export const CLAUDE_QUOTA_MAX_AGE_MS = 30 * 60_000;
 
 const LimitSchema = z.object({
   used_percentage: z.number(),
@@ -17,6 +17,8 @@ const LimitSchema = z.object({
 
 const CacheSchema = z.object({
   at: z.number().positive(),
+  error: z.unknown().optional(),
+  certainty: z.string().optional(),
   five_hour: LimitSchema.optional(),
   seven_day: LimitSchema.optional(),
 });
@@ -25,14 +27,9 @@ export function defaultClaudeQuotaCachePath(home = os.homedir()): string {
   return path.join(home, ".claude", "statusline-quota-cache.json");
 }
 
-function limitWindow(
-  kind: UsageWindow["kind"],
-  limit: z.infer<typeof LimitSchema>,
-  nowMs: number,
-): UsageWindow {
+function limitWindow(kind: UsageWindow["kind"], limit: z.infer<typeof LimitSchema>): UsageWindow {
   const resetsAtMs = limit.resets_at === undefined ? undefined : limit.resets_at * 1000;
-  // A window whose reset time has passed since the cache was written is fully available again.
-  const used = resetsAtMs !== undefined && resetsAtMs <= nowMs ? 0 : limit.used_percentage;
+  const used = limit.used_percentage;
   const usedPercent = Math.max(0, Math.min(100, used));
   return {
     kind,
@@ -43,10 +40,11 @@ function limitWindow(
 }
 
 export function createClaudeStatuslineCollector(
-  options: { cachePath?: string; now?: () => number } = {},
+  options: { cachePath?: string; now?: () => number; maxAgeMs?: number } = {},
 ): UsageCollector {
   const cachePath = options.cachePath ?? defaultClaudeQuotaCachePath();
   const now = options.now ?? Date.now;
+  const maxAgeMs = options.maxAgeMs ?? CLAUDE_QUOTA_MAX_AGE_MS;
 
   function unknown(account: Account): UsageSnapshot {
     const at = new Date(now()).toISOString();
@@ -72,20 +70,20 @@ export function createClaudeStatuslineCollector(
       } catch {
         return unknown(account);
       }
-      if (!cache.success) {
+      if (!cache.success || cache.data.error !== undefined || cache.data.certainty === "unknown") {
         return unknown(account);
       }
       const nowMs = now();
       const collectedAtMs = cache.data.at * 1000;
-      if (nowMs - collectedAtMs > CLAUDE_QUOTA_MAX_AGE_MS) {
+      if (collectedAtMs > nowMs || nowMs - collectedAtMs > maxAgeMs) {
         return unknown(account);
       }
       const windows: UsageWindow[] = [];
       if (cache.data.five_hour) {
-        windows.push(limitWindow("five-hour", cache.data.five_hour, nowMs));
+        windows.push(limitWindow("five-hour", cache.data.five_hour));
       }
       if (cache.data.seven_day) {
-        windows.push(limitWindow("weekly", cache.data.seven_day, nowMs));
+        windows.push(limitWindow("weekly", cache.data.seven_day));
       }
       if (windows.length === 0) {
         return unknown(account);
@@ -96,7 +94,7 @@ export function createClaudeStatuslineCollector(
         collectedAt: new Date(collectedAtMs).toISOString(),
         source: "local-session",
         certainty: "estimated",
-        expiresAt: new Date(nowMs + 60_000).toISOString(),
+        expiresAt: new Date(collectedAtMs + maxAgeMs).toISOString(),
       });
     },
     async listAvailableModels() {

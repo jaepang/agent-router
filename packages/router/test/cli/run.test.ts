@@ -1,3 +1,5 @@
+import { codexPersonal, codexModel } from "./fixtures.js";
+import { weeklyExhaustedAccounts, weeklyExhaustedUsage } from "./fixtures.js";
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -61,9 +63,9 @@ function scripted(responses: Scripted): typeof runCommand {
 
 function baseDeps() {
   return {
-    accounts: [personal],
+    accounts: [personal, ...weeklyExhaustedAccounts],
     models: [cursorModel],
-    usage: { [personal.id]: usageFor(personal.id, 0.8) },
+    usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
     client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
     env: { HERDR_ENV: "1" },
     now,
@@ -142,9 +144,9 @@ describe("router run", () => {
       "Implement the approved session repository plan.",
       { dryRun: true },
       {
-        accounts: [personal],
+        accounts: [personal, ...weeklyExhaustedAccounts],
         models: [cursorModel],
-        usage: { [personal.id]: usageFor(personal.id, 0.8) },
+        usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
         client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
         env: { HERDR_ENV: "1" },
         now,
@@ -170,38 +172,39 @@ describe("router run", () => {
       {
         accounts: [shared],
         models: [claudeModel],
-        usage: { [shared.id]: usageFor(shared.id, 0.3) },
+        usage: { ...weeklyExhaustedUsage, [shared.id]: usageFor(shared.id, 0.3) },
         client,
         env: {},
         now,
       },
     );
-    expect(result.code).toBe(2);
-    expect(result.output).toMatch(/No eligible route/);
+    expect(result.code).toBe(75);
+    expect(result.output).toMatch(/quota-wait|usage-unavailable/);
     expect(result.output).toMatch(/below-reserve/);
     expect(client.calls).toEqual([]);
   });
 
   it("presents the top two eligible routes when confidence is low and consequence is high", async () => {
-    const personalOpaque = `${personal.id}:${cursorModel.id}`;
+    const codexPersonalOpaque = `${codexPersonal.id}:${codexModel.id}`;
     const sharedOpaque = `${shared.id}:${claudeModel.id}`;
     const result = await executeRun(
       "Plan a high-stakes architecture change.",
       { dryRun: true },
       {
-        accounts: [personal, shared],
-        models: [cursorModel, claudeModel],
+        accounts: [codexPersonal, shared],
+        models: [codexModel, claudeModel],
         usage: {
-          [personal.id]: usageFor(personal.id, 0.9),
+          ...weeklyExhaustedUsage,
+          [codexPersonal.id]: usageFor(codexPersonal.id, 0.9),
           [shared.id]: usageFor(shared.id, 0.8),
         },
         client: fakeTypeSafe({
           family: "planning",
           phase: "planning",
           consequence: 3,
-          route: personalOpaque,
+          route: codexPersonalOpaque,
           routeConfidence: 0.5,
-          routeProbabilities: { [personalOpaque]: 0.48, [sharedOpaque]: 0.42 },
+          routeProbabilities: { [codexPersonalOpaque]: 0.48, [sharedOpaque]: 0.42 },
         }),
         env: {},
         now,
@@ -209,7 +212,7 @@ describe("router run", () => {
     );
     expect(result.code).toBe(3);
     expect(result.output).toMatch(/Low confidence/);
-    expect(result.output).toContain(personalOpaque);
+    expect(result.output).toContain(codexPersonalOpaque);
     expect(result.output).toContain(sharedOpaque);
   });
 
@@ -220,9 +223,9 @@ describe("router run", () => {
       return { ok: true, code: 0, stdout: "pane_abc\n", stderr: "" };
     });
     const deps = {
-      accounts: [personal],
+      accounts: [personal, ...weeklyExhaustedAccounts],
       models: [cursorModel],
-      usage: { [personal.id]: usageFor(personal.id, 0.8) },
+      usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
       client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
       env: { HERDR_ENV: "1" },
       now,
@@ -252,7 +255,7 @@ describe("router run", () => {
       {
         accounts: [shared],
         models: [claudeModel],
-        usage: { [shared.id]: usageFor(shared.id, 0.85) },
+        usage: { ...weeklyExhaustedUsage, [shared.id]: usageFor(shared.id, 0.85) },
         client,
         env: {},
         now,
@@ -260,7 +263,7 @@ describe("router run", () => {
       },
     );
     expect(status).toHaveBeenCalledWith(shared.id);
-    expect(result.code).toBe(2);
+    expect(result.code).toBe(75);
     expect(result.output).toMatch(/shared-activity-constrained/);
     expect(client.calls).toEqual([]);
   });
@@ -274,7 +277,7 @@ describe("router run", () => {
       {
         accounts: [shared],
         models: [claudeModel],
-        usage: { [shared.id]: usageFor(shared.id, 0.85) },
+        usage: { ...weeklyExhaustedUsage, [shared.id]: usageFor(shared.id, 0.85) },
         client,
         env: {},
         now,
@@ -296,7 +299,7 @@ describe("router run", () => {
       {
         accounts: [{ ...shared, reserveFloor: 0.6 }],
         models: [claudeModel],
-        usage: { [shared.id]: usageFor(shared.id, 0.95) },
+        usage: { ...weeklyExhaustedUsage, [shared.id]: usageFor(shared.id, 0.95) },
         client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
         env: {},
         now,
@@ -314,14 +317,14 @@ describe("router run", () => {
       {
         accounts: [shared],
         models: [claudeModel],
-        usage: { [shared.id]: usageFor(shared.id, 0.41) },
+        usage: { ...weeklyExhaustedUsage, [shared.id]: usageFor(shared.id, 0.41) },
         client,
         env: {},
         now,
         activityClient: { status: async () => "unreachable" as const },
       },
     );
-    expect(result.code).toBe(2);
+    expect(result.code).toBe(75);
     expect(result.output).toMatch(/below-reserve/);
     expect(client.calls).toEqual([]);
   });
@@ -335,6 +338,7 @@ describe("router run", () => {
         accounts: [shared],
         models: [claudeModel],
         usage: {
+          ...weeklyExhaustedUsage,
           [shared.id]: usageFor(shared.id, 0, {
             windows: [{ kind: "five-hour" }],
             source: "skipped",
@@ -347,7 +351,7 @@ describe("router run", () => {
         activityClient: { status: async () => "unreachable" as const },
       },
     );
-    expect(result.code).toBe(2);
+    expect(result.code).toBe(75);
     expect(result.output).toMatch(/shared-activity-constrained/);
     expect(client.calls).toEqual([]);
   });
@@ -361,7 +365,7 @@ describe("router run", () => {
       {
         accounts: [shared],
         models: [claudeModel],
-        usage: { [shared.id]: usageFor(shared.id, 0.85) },
+        usage: { ...weeklyExhaustedUsage, [shared.id]: usageFor(shared.id, 0.85) },
         client,
         env: {},
         now,
@@ -385,9 +389,9 @@ describe("router run", () => {
       "Implement the approved plan.",
       { dryRun: false },
       {
-        accounts: [personal],
+        accounts: [personal, ...weeklyExhaustedAccounts],
         models: [cursorModel],
-        usage: { [personal.id]: usageFor(personal.id, 0.8) },
+        usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
         client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
         env: { HERDR_ENV: "1" },
         now,
@@ -407,22 +411,22 @@ describe("router run", () => {
     );
   });
 
-  it("labels usage as unknown when no collector returned usage", async () => {
+  it("refuses usage as unknown when no collector returned usage", async () => {
     const usage = await collectUsageChain(personal, []);
     const result = await executeRun(
       "Implement the approved plan.",
       { dryRun: true },
       {
-        accounts: [personal],
+        accounts: [personal, ...weeklyExhaustedAccounts],
         models: [cursorModel],
-        usage: { [personal.id]: usage },
+        usage: { ...weeklyExhaustedUsage, [personal.id]: usage },
         client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
         env: {},
         now: new Date(),
       },
     );
-    expect(result.code).toBe(0);
-    expect(result.output).toContain("Usage source: unknown (no collector returned usage)");
+    expect(result.code).toBe(75);
+    expect(result.output).toMatch(/unknown-usage|usage-unavailable/);
     expect(result.output).not.toMatch(/Usage source:.*browser-dashboard/);
   });
 
@@ -447,9 +451,9 @@ describe("router run", () => {
       "Implement the approved plan.",
       { dryRun: true },
       {
-        accounts: [account],
+        accounts: [account, ...weeklyExhaustedAccounts],
         models: [composer],
-        usage: { [personal.id]: usage },
+        usage: { ...weeklyExhaustedUsage, [personal.id]: usage },
         client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
         env: {},
         now,
@@ -460,14 +464,15 @@ describe("router run", () => {
     expect(result.output).toContain("Quota: auto 80% left (spend 0% left)");
   });
 
-  it("labels skipped usage in the card and still routes a personal account", async () => {
+  it("refuses a personal account when usage was skipped", async () => {
     const result = await executeRun(
       "Implement the approved plan.",
       { dryRun: true },
       {
-        accounts: [personal],
+        accounts: [personal, ...weeklyExhaustedAccounts],
         models: [cursorModel],
         usage: {
+          ...weeklyExhaustedUsage,
           [personal.id]: usageFor(personal.id, 0, {
             windows: [{ kind: "five-hour" }],
             source: "skipped",
@@ -480,8 +485,8 @@ describe("router run", () => {
         now,
       },
     );
-    expect(result.code).toBe(0);
-    expect(result.output).toContain("Usage source: skipped (run with --usage to check quota)");
+    expect(result.code).toBe(75);
+    expect(result.output).toMatch(/unknown-usage|usage-unavailable/);
     expect(result.output).not.toContain("Quota:");
   });
 
@@ -489,7 +494,7 @@ describe("router run", () => {
     const createRunDeps = vi.fn(async () => ({
       accounts: [],
       models: [],
-      usage: {},
+      usage: { ...weeklyExhaustedUsage },
       client: fakeTypeSafe({}),
       env: {},
     }));
@@ -516,9 +521,9 @@ describe("router run", () => {
       "Implement the approved plan.",
       { dryRun: true },
       {
-        accounts: [personal],
+        accounts: [personal, ...weeklyExhaustedAccounts],
         models: [cursorModel],
-        usage: { [personal.id]: usageFor(personal.id, 0.8) },
+        usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
         client: {
           calls: [],
           systemOne: async () => {

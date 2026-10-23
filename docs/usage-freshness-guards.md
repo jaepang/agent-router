@@ -1,0 +1,11 @@
+# Usage freshness and primary CLI priority
+
+Every account, including personal accounts, needs a known remaining ratio from a fresh observation. The maximum observation age defaults to 1800 seconds. Set `usageMaxAgeSeconds` in `config.json`, or override it with `MODEL_ROUTER_USAGE_MAX_AGE_SECONDS`. Provider/cache expiry is also enforced; re-reading a cache never renews its observation time. Failed refreshes are persisted as unknown usage rather than silently retaining a prior success.
+
+The router prefers usable Codex and Claude accounts. Cursor is eligible only when both primary CLIs have confirmed weekly exhaustion. Missing, stale, disabled, or unconfigured primary usage cannot unlock Cursor. Two short-term limits return `quota-wait` with the earliest known `retryAt`; unavailable observations return `usage-unavailable`. Both stop with exit code 75, before ranking or launching a fallback. The selected route is revalidated after ranking.
+
+Cursor also needs its actual weekly included-pool observation. Monthly spend/auto percentages do not establish weekly availability. Its cache accepts `at`, `weekly_left` (remaining percent), and optional `weekly_resets_at` (epoch seconds). Codex caches retain both `five_hour` and `seven_day`, including resets, while continuing to accept the older weekly-only cache.
+
+All Cursor command construction refuses model IDs containing `claude`, `gpt`, or `gemini`, ignoring case. Existing Grok/auto/composer launch names remain supported. The corresponding dotfiles wrappers also guard direct CLI model flags.
+
+The standalone refresh scripts never extract credentials from files or Keychain. Claude/Cursor HTTP helpers accept an explicitly supplied `CLAUDE_USAGE_ACCESS_TOKEN` / `CURSOR_USAGE_ACCESS_TOKEN` environment value; they do not initiate login. The Cursor HTTP helper measures the legacy monthly pools and does not manufacture weekly data. A credential-free periodic collector and Linux startup/recovery instructions live in the dotfiles repository's `docs/usage-collector-recovery.md`.
