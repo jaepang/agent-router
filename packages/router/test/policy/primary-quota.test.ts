@@ -168,3 +168,157 @@ describe("Cursor model family guard", () => {
     ]);
   });
 });
+
+describe("review round 1 regressions", () => {
+  const unknown = (id: string) => usageFor(id, 0, { certainty: "unknown" });
+  const openModel = {
+    ...codexModel,
+    id: "opencode:review-model",
+    agent: "opencode" as const,
+    provider: "opencode" as const,
+    launchName: "review-model",
+  };
+  const openAccount = {
+    ...codexPersonal,
+    id: "acct_opencode",
+    agent: "opencode" as const,
+    provider: "opencode" as const,
+    enabledModels: [openModel.id],
+  };
+
+  it("refuses a Cursor model attached to a Codex account with fresh remaining quota", async () => {
+    const mismatched = { ...codexPersonal, enabledModels: [cursorModel.id] };
+    const client = fakeTypeSafe({});
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true, noEnrich: true },
+      {
+        accounts: [mismatched, shared, personal],
+        models: [cursorModel, claudeModel],
+        usage: {
+          [mismatched.id]: weekly(mismatched.id, 0.8),
+          [shared.id]: unknown(shared.id),
+          [personal.id]: unknown(personal.id),
+        },
+        client,
+        env: {},
+        now,
+      },
+    );
+    expect(result).toMatchObject({
+      code: 75,
+      json: {
+        ok: false,
+        exclusions: expect.arrayContaining([
+          { accountId: mismatched.id, modelId: cursorModel.id, reason: "account-agent-mismatch" },
+        ]),
+      },
+    });
+    expect(client.calls).toEqual([]);
+    expect(
+      evaluateEligibility({
+        account: mismatched,
+        model: cursorModel,
+        usage: weekly(mismatched.id, 0.8),
+        estimatedCostRatio: 0,
+        now,
+      }),
+    ).toEqual({ eligible: false, reason: "account-agent-mismatch" });
+  });
+
+  it("refuses a primary model attached to an account for another CLI", () => {
+    const mismatched = { ...personal, enabledModels: [codexModel.id] };
+    expect(
+      evaluateEligibility({
+        account: mismatched,
+        model: codexModel,
+        usage: weekly(mismatched.id, 0.8),
+        estimatedCostRatio: 0,
+        now,
+      }),
+    ).toEqual({ eligible: false, reason: "account-agent-mismatch" });
+  });
+
+  it.each(["unknown", "short-term"])(
+    "cannot route through OpenCode when both primary CLIs are %s",
+    async (state) => {
+      const blocked =
+        state === "unknown"
+          ? unknown
+          : (id: string) =>
+              short(id, id === shared.id ? "2026-09-17T11:00:00.000Z" : "2026-09-17T12:00:00.000Z");
+      const client = fakeTypeSafe({ route: `${openAccount.id}:${openModel.id}` });
+      const result = await executeRun(
+        "Implement the approved plan.",
+        { dryRun: true, noEnrich: true },
+        {
+          accounts: [codexPersonal, shared, openAccount],
+          models: [codexModel, claudeModel, openModel],
+          usage: {
+            [codexPersonal.id]: blocked(codexPersonal.id),
+            [shared.id]: blocked(shared.id),
+            [openAccount.id]: weekly(openAccount.id, 0.8),
+          },
+          client,
+          env: {},
+          now,
+        },
+      );
+      expect(result).toMatchObject({
+        code: 75,
+        json: {
+          ok: false,
+          status: state === "unknown" ? "usage-unavailable" : "quota-wait",
+          ...(state === "short-term" ? { retryAt: "2026-09-17T11:00:00.000Z" } : {}),
+        },
+      });
+      expect(client.calls).toEqual([]);
+    },
+  );
+
+  it("keeps a usable Codex ahead of a fresh OpenCode candidate", async () => {
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true, noEnrich: true },
+      {
+        accounts: [codexPersonal, shared, openAccount],
+        models: [openModel, codexModel, claudeModel],
+        usage: {
+          [codexPersonal.id]: weekly(codexPersonal.id, 0.8),
+          [shared.id]: unknown(shared.id),
+          [openAccount.id]: weekly(openAccount.id, 1),
+        },
+        client: fakeTypeSafe({ route: `${openAccount.id}:${openModel.id}` }),
+        env: {},
+        now,
+      },
+    );
+    expect(result).toMatchObject({
+      code: 0,
+      json: { selected: `${codexPersonal.id}:${codexModel.id}` },
+    });
+  });
+
+  it("permits a known fallback only after both primary weekly limits", async () => {
+    const result = await executeRun(
+      "Implement the approved plan.",
+      { dryRun: true, noEnrich: true },
+      {
+        accounts: [codexPersonal, shared, openAccount],
+        models: [openModel, codexModel, claudeModel],
+        usage: {
+          [codexPersonal.id]: weekly(codexPersonal.id),
+          [shared.id]: weekly(shared.id),
+          [openAccount.id]: weekly(openAccount.id, 0.8),
+        },
+        client: fakeTypeSafe({}),
+        env: {},
+        now,
+      },
+    );
+    expect(result).toMatchObject({
+      code: 0,
+      json: { selected: `${openAccount.id}:${openModel.id}` },
+    });
+  });
+});

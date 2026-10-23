@@ -6,6 +6,7 @@ import { projectedRemainingRatio, remainingRatio } from "./quota.js";
 import { roundRatio } from "./ratio.js";
 
 export type ExclusionReason =
+  | "account-agent-mismatch"
   | "cursor-model-forbidden"
   | "account-disabled"
   | "stale-usage"
@@ -28,6 +29,9 @@ export interface EligibilityInput {
 }
 
 export function evaluateEligibility(input: EligibilityInput): EligibilityResult {
+  if (input.account.agent !== input.model.agent) {
+    return { eligible: false, reason: "account-agent-mismatch" };
+  }
   if (input.model.agent === "cursor" && /claude|gpt|gemini/i.test(input.model.launchName)) {
     return { eligible: false, reason: "cursor-model-forbidden" };
   }

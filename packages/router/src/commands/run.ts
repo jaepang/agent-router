@@ -264,10 +264,6 @@ export async function executeRun(
   const exclusions = [];
   const ownerMessages = new Map<string, string>();
   for (const account of deps.accounts) {
-    if (account.agent === "cursor" && !quotaPolicy.cursorAllowed) {
-      exclusions.push({ accountId: account.id, reason: "primary-quota-policy" });
-      continue;
-    }
     if (deps.activityClient) {
       const activity = await readSharedActivity({
         account,
@@ -294,6 +290,22 @@ export async function executeRun(
       continue;
     }
     for (const model of deps.models.filter((item) => account.enabledModels.includes(item.id))) {
+      if (account.agent !== model.agent) {
+        exclusions.push({
+          accountId: account.id,
+          modelId: model.id,
+          reason: "account-agent-mismatch",
+        });
+        continue;
+      }
+      if (model.agent !== "codex" && model.agent !== "claude-code" && !quotaPolicy.cursorAllowed) {
+        exclusions.push({
+          accountId: account.id,
+          modelId: model.id,
+          reason: "primary-quota-policy",
+        });
+        continue;
+      }
       const estimatedCostRatio = estimateTaskCostRatio({
         relativeQuotaCost: model.relativeQuotaCost,
         baselineRatio: TASK_BASELINE_RATIO,
@@ -392,7 +404,11 @@ export async function executeRun(
     revalidationNow,
     deps.usageMaxAgeMs,
   );
-  if (selected.account.agent === "cursor" && !latestQuotaPolicy.cursorAllowed) {
+  if (
+    selected.model.agent !== "codex" &&
+    selected.model.agent !== "claude-code" &&
+    !latestQuotaPolicy.cursorAllowed
+  ) {
     return {
       code: 75,
       output: latestQuotaPolicy.reason,
