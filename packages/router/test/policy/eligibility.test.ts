@@ -115,7 +115,7 @@ describe("eligibility", () => {
     expect(result.projectedRemainingRatio).toBeCloseTo(0.15);
   });
 
-  it("does not exclude a personal account when its model pool is exhausted", () => {
+  it("excludes a personal account when its model pool is exhausted", () => {
     const pooledUsage = usage(undefined, {
       accountId: personal.id,
       certainty: "estimated",
@@ -142,8 +142,8 @@ describe("eligibility", () => {
       estimatedCostRatio: 0.02,
       now,
     });
-    expect(spend.eligible).toBe(true);
-    expect(spend.projectedRemainingRatio).toBeCloseTo(-0.02);
+    expect(spend.eligible).toBe(false);
+    expect(spend.projectedRemainingRatio).toBe(0);
     const auto = evaluateEligibility({
       account,
       model: autoModel,
@@ -155,7 +155,7 @@ describe("eligibility", () => {
     expect(auto.projectedRemainingRatio).toBeCloseTo(0.78);
   });
 
-  it("lets a personal account through when usage is unknown, and still excludes shared unknown or stale usage", () => {
+  it("excludes unknown usage for both personal and shared accounts", () => {
     const personalUnknown = evaluateEligibility({
       account: personal,
       model,
@@ -177,7 +177,7 @@ describe("eligibility", () => {
       estimatedCostRatio: 0,
       now,
     });
-    expect(personalUnknown).toMatchObject({ eligible: true, projectedRemainingRatio: 1 });
+    expect(personalUnknown).toMatchObject({ eligible: false, reason: "unknown-usage" });
     expect(sharedUnknown).toMatchObject({ eligible: false, reason: "unknown-usage" });
     expect(stale).toMatchObject({ eligible: false, reason: "stale-usage" });
   });

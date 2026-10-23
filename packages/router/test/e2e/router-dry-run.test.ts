@@ -1,3 +1,4 @@
+import { weeklyExhaustedAccounts, weeklyExhaustedUsage } from "../cli/fixtures.js";
 import { describe, expect, it } from "vitest";
 import { executeRun } from "../../src/commands/run.js";
 import { buildHandoff } from "../../src/handoff/handoff-builder.js";
@@ -10,9 +11,9 @@ describe("planning to implementation dry run", () => {
       "Draft the architecture before any code.",
       { dryRun: true },
       {
-        accounts: [personal],
+        accounts: [personal, ...weeklyExhaustedAccounts],
         models: [cursorModel],
-        usage: { [personal.id]: usageFor(personal.id, 0.85) },
+        usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.85) },
         client: fakeTypeSafe({ family: "planning", phase: "planning", effort: "high" }),
         env: {},
         now,
@@ -33,9 +34,9 @@ describe("planning to implementation dry run", () => {
       "Implement the already approved plan for the session repository.",
       { dryRun: true },
       {
-        accounts: [personal],
+        accounts: [personal, ...weeklyExhaustedAccounts],
         models: [cursorModel],
-        usage: { [personal.id]: usageFor(personal.id, 0.85) },
+        usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.85) },
         client: fakeTypeSafe({
           family: "implementation",
           phase: "implementation",

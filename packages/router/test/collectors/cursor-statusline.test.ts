@@ -19,10 +19,11 @@ function collector(cachePath: string) {
 }
 
 describe("cursor status line quota collector", () => {
-  it("reads spend and auto pools from the status line cache", async () => {
+  it("reads the weekly included pool without substituting monthly pools", async () => {
     const at = (nowMs - 95_000) / 1000;
     const cachePath = cacheFile({
       text: "quota $0.00/$20.00  auto 80% left  limit hit",
+      weekly_left: 80,
       pct: 0,
       auto_left: 80,
       at,
@@ -36,8 +37,7 @@ describe("cursor status line quota collector", () => {
       collectedAt: new Date(at * 1000).toISOString(),
     });
     expect(snapshot.windows).toEqual([
-      { kind: "monthly", pool: "spend", remainingRatio: 0, usedRatio: 1 },
-      { kind: "monthly", pool: "auto", remainingRatio: 0.8, usedRatio: 0.2 },
+      { kind: "weekly", remainingRatio: 0.8, usedRatio: 0.19999999999999996 },
     ]);
     expect(Date.parse(snapshot.expiresAt)).toBeGreaterThan(nowMs);
   });
@@ -50,8 +50,8 @@ describe("cursor status line quota collector", () => {
       () => cacheFile({ text: "quota —", pct: 0, auto_left: 0, at: 0 }),
     ],
     [
-      "the cache is older than 15 minutes",
-      () => cacheFile({ text: "quota", pct: 50, auto_left: 50, at: (nowMs - 16 * 60_000) / 1000 }),
+      "the cache is older than 30 minutes",
+      () => cacheFile({ text: "quota", pct: 50, auto_left: 50, at: (nowMs - 31 * 60_000) / 1000 }),
     ],
   ])("returns unknown usage when %s", async (_label, makePath) => {
     const snapshot = await collector(makePath()).collectUsage(personal);

@@ -29,11 +29,11 @@ describe("shared activity and reserve", () => {
         now,
       },
     );
-    expect(result.code).toBe(0);
-    expect(JSON.stringify(result.json)).not.toContain(shared.id);
-    expect(client.calls.some((call) => "route" in call.questions)).toBe(true);
+    expect(result.code).toBe(75);
+    expect(result.output).toContain("below-reserve");
+    expect(client.calls.some((call) => "route" in call.questions)).toBe(false);
     const ranked = client.calls.find((call) => "route" in call.questions);
-    expect(JSON.stringify(ranked)).not.toContain(shared.id);
+    expect(ranked).toBeUndefined();
   });
 
   it("shows only the owner-visible shared activity phrase", async () => {

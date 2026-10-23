@@ -52,6 +52,7 @@ export const CoordinatorConfigSchema = z.object({
 });
 
 export const ConfigFileSchema = z.object({
+  usageMaxAgeSeconds: z.number().positive().default(1800),
   accounts: z.array(ConfigAccountInputSchema).default([]),
   coordinator: CoordinatorConfigSchema.optional(),
   typesafe: z

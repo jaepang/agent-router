@@ -1,3 +1,5 @@
+import { codexPersonal, codexModel } from "../cli/fixtures.js";
+import { weeklyExhaustedAccounts, weeklyExhaustedUsage } from "../cli/fixtures.js";
 import { describe, expect, it } from "vitest";
 import { executeRun } from "../../src/commands/run.js";
 import { collectUsageChain } from "../../src/collectors/collector-chain.js";
@@ -14,16 +16,17 @@ import {
 
 describe("failure and confidence paths", () => {
   it("asks the user when a consequential route is low confidence", async () => {
-    const personalOpaque = `${personal.id}:${cursorModel.id}`;
+    const codexPersonalOpaque = `${codexPersonal.id}:${codexModel.id}`;
     const sharedOpaque = `${shared.id}:${claudeModel.id}`;
     const result = await executeRun(
       "Plan a high-stakes architecture change.",
       { dryRun: true },
       {
-        accounts: [personal, shared],
-        models: [cursorModel, claudeModel],
+        accounts: [codexPersonal, shared],
+        models: [codexModel, claudeModel],
         usage: {
-          [personal.id]: usageFor(personal.id, 0.9),
+          ...weeklyExhaustedUsage,
+          [codexPersonal.id]: usageFor(codexPersonal.id, 0.9),
           [shared.id]: usageFor(shared.id, 0.8),
         },
         client: fakeTypeSafe({
@@ -31,7 +34,7 @@ describe("failure and confidence paths", () => {
           phase: "planning",
           consequence: 3,
           routeConfidence: 0.4,
-          routeProbabilities: { [personalOpaque]: 0.46, [sharedOpaque]: 0.44 },
+          routeProbabilities: { [codexPersonalOpaque]: 0.46, [sharedOpaque]: 0.44 },
         }),
         env: {},
         now,
@@ -59,14 +62,14 @@ describe("failure and confidence paths", () => {
       {
         accounts: [shared],
         models: [claudeModel],
-        usage: { [shared.id]: snapshot },
+        usage: { ...weeklyExhaustedUsage, [shared.id]: snapshot },
         client: fakeTypeSafe({}),
         env: {},
         now,
       },
     );
-    expect(result.code).toBe(2);
-    expect(result.output).toMatch(/unknown-usage|No eligible route/);
+    expect(result.code).toBe(75);
+    expect(result.output).toMatch(/unknown-usage|usage-unavailable|stale-usage/);
   });
 
   it("does not invent a semantic judgment when TypeSafe is down", async () => {
@@ -74,9 +77,9 @@ describe("failure and confidence paths", () => {
       "Implement the approved plan.",
       { dryRun: true },
       {
-        accounts: [personal],
+        accounts: [personal, ...weeklyExhaustedAccounts],
         models: [cursorModel],
-        usage: { [personal.id]: usageFor(personal.id, 0.8) },
+        usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
         client: {
           calls: [],
           systemOne: async () => {
@@ -102,9 +105,9 @@ describe("failure and confidence paths", () => {
       "Implement the approved plan.",
       { dryRun: false },
       {
-        accounts: [personal],
+        accounts: [personal, ...weeklyExhaustedAccounts],
         models: [cursorModel],
-        usage: { [personal.id]: usageFor(personal.id, 0.8) },
+        usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
         client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
         env: { HERDR_ENV: "1" },
         now,

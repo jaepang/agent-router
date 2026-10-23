@@ -1,3 +1,4 @@
+import { weeklyExhaustedAccounts, weeklyExhaustedUsage } from "./fixtures.js";
 import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -30,9 +31,9 @@ function setup(send: Omit<CommandResult, "ok">, options: { waitOk?: boolean } = 
     return { ok: false, code: 1, stdout: "", stderr: "" };
   });
   const deps = {
-    accounts: [personal],
+    accounts: [personal, ...weeklyExhaustedAccounts],
     models: [cursorModel],
-    usage: { [personal.id]: usageFor(personal.id, 0.8) },
+    usage: { ...weeklyExhaustedUsage, [personal.id]: usageFor(personal.id, 0.8) },
     client: fakeTypeSafe({ family: "implementation", phase: "implementation" }),
     env: { HERDR_ENV: "1" },
     now,

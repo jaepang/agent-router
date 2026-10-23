@@ -126,6 +126,6 @@ describe("collector chain", () => {
         estimatedCostRatio: 0.1,
         now,
       }).eligible,
-    ).toBe(true);
+    ).toBe(false);
   });
 });

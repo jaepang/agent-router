@@ -40,8 +40,8 @@ describe("codex status line quota collector", () => {
     });
   });
 
-  it("returns unknown when the cache is older than 15 minutes", async () => {
-    const at = (nowMs - 16 * 60_000) / 1000;
+  it("returns unknown when the cache is older than 30 minutes", async () => {
+    const at = (nowMs - 31 * 60_000) / 1000;
     const snapshot = await collector(cacheFile({ weekly_left: 40, at })).collectUsage(codexAccount);
     expect(snapshot.certainty).toBe("unknown");
     expect(snapshot.source).toBe("local-session");

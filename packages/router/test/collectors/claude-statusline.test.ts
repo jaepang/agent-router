@@ -51,7 +51,7 @@ describe("claude status line quota collector", () => {
     expect(Date.parse(snapshot.expiresAt)).toBeGreaterThan(nowMs);
   });
 
-  it("treats a window whose reset time has passed as fully available", async () => {
+  it("does not invent recovery after a reset without a new observation", async () => {
     const snapshot = await collect(
       cacheFile({
         at: nowSec - 600,
@@ -61,8 +61,8 @@ describe("claude status line quota collector", () => {
     );
     expect(snapshot.windows[0]).toMatchObject({
       kind: "five-hour",
-      remainingRatio: 1,
-      usedRatio: 0,
+      remainingRatio: 0.05,
+      usedRatio: 0.95,
     });
   });
 
@@ -78,10 +78,10 @@ describe("claude status line quota collector", () => {
     ["the cache is not JSON", () => cacheFile("not json")],
     ["the cache has no limit windows", () => cacheFile({ at: nowSec })],
     [
-      "the cache is older than 15 minutes",
+      "the cache is older than 30 minutes",
       () =>
         cacheFile({
-          at: nowSec - 16 * 60,
+          at: nowSec - 31 * 60,
           seven_day: { used_percentage: 10, resets_at: nowSec + 86400 },
         }),
     ],

@@ -10,6 +10,7 @@ export interface LoadConfigOptions {
 
 export interface AppConfig {
   home: string;
+  usageMaxAgeSeconds?: number;
   accounts: ConfiguredAccount[];
   coordinator?: {
     url: string;
@@ -59,6 +60,9 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   });
   return {
     home,
+    usageMaxAgeSeconds: ConfigFileSchema.shape.usageMaxAgeSeconds.parse(
+      Number(env.MODEL_ROUTER_USAGE_MAX_AGE_SECONDS ?? file.usageMaxAgeSeconds),
+    ),
     accounts,
     coordinator: coordinatorUrl
       ? {

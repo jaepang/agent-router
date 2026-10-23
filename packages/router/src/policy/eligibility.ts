@@ -6,6 +6,8 @@ import { projectedRemainingRatio, remainingRatio } from "./quota.js";
 import { roundRatio } from "./ratio.js";
 
 export type ExclusionReason =
+  | "account-agent-mismatch"
+  | "cursor-model-forbidden"
   | "account-disabled"
   | "stale-usage"
   | "unknown-usage"
@@ -23,9 +25,16 @@ export interface EligibilityInput {
   usage: UsageSnapshot;
   estimatedCostRatio: number;
   now: Date;
+  usageMaxAgeMs?: number;
 }
 
 export function evaluateEligibility(input: EligibilityInput): EligibilityResult {
+  if (input.account.agent !== input.model.agent) {
+    return { eligible: false, reason: "account-agent-mismatch" };
+  }
+  if (input.model.agent === "cursor" && /claude|gpt|gemini/i.test(input.model.launchName)) {
+    return { eligible: false, reason: "cursor-model-forbidden" };
+  }
   if (!input.account.enabled) {
     return { eligible: false, reason: "account-disabled" };
   }
@@ -33,19 +42,16 @@ export function evaluateEligibility(input: EligibilityInput): EligibilityResult 
     return { eligible: false, reason: "model-not-enabled" };
   }
   const personal = input.account.ownership === "personal";
-  if (!personal && !isFresh(input.usage, input.now)) {
+  if (!isFresh(input.usage, input.now, input.usageMaxAgeMs)) {
     return { eligible: false, reason: "stale-usage" };
   }
   const pool = input.model.quotaPool;
   const remaining = remainingRatio(input.usage, pool);
-  if (!personal && remaining !== undefined && remaining <= 0) {
+  if (remaining !== undefined && remaining <= 0) {
     return { eligible: false, reason: "quota-exhausted", projectedRemainingRatio: remaining };
   }
   const projected = projectedRemainingRatio(input.usage, input.estimatedCostRatio, pool);
   if (projected === undefined) {
-    if (personal) {
-      return { eligible: true, projectedRemainingRatio: 1 };
-    }
     return { eligible: false, reason: "unknown-usage" };
   }
   const roundedProjected = roundRatio(projected);
