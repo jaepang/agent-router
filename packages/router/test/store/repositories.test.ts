@@ -150,4 +150,21 @@ describe("sqlite store", () => {
     expect(snapshot?.windows[0]?.remainingRatio).toBeUndefined();
     db.close();
   });
+
+  it("preserves stale-preserved usage snapshots through storage", () => {
+    const db = openTestDb();
+    const usage = new UsageRepository(db);
+    usage.save({
+      accountId: "acct_personal_cursor",
+      windows: [{ kind: "weekly", remainingRatio: 0.5 }],
+      collectedAt: "2026-09-17T09:00:00.000Z",
+      source: "local-session",
+      certainty: "estimated",
+      stalePreserved: true,
+      expiresAt: "2026-09-17T10:00:00.000Z",
+      activeReservationRatio: 0,
+    });
+    expect(usage.latest("acct_personal_cursor")?.stalePreserved).toBe(true);
+    db.close();
+  });
 });

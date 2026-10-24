@@ -78,6 +78,25 @@ describe("primary quota routing policy", () => {
     });
     expect((await result).json).toMatchObject({ selected: `${personal.id}:${cursorModel.id}` });
   });
+  it("does not open Cursor from a preserved Claude weekly value exhausted only by its margin", () => {
+    const preservedClaude = usageFor(shared.id, 0.0001, {
+      certainty: "estimated",
+      stalePreserved: true,
+      windows: [
+        { kind: "five-hour", remainingRatio: 0.0001 },
+        { kind: "weekly", remainingRatio: 0.0001 },
+      ],
+      collectedAt: new Date(now.getTime() - 31 * 60_000).toISOString(),
+      expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+    });
+    const quota = primaryQuota(
+      [codexPersonal, shared],
+      { [codexPersonal.id]: weekly(codexPersonal.id), [shared.id]: preservedClaude },
+      now,
+    );
+    expect(quota.cursorAllowed).toBe(false);
+    expect(quota.status).toBe("usage-unavailable");
+  });
   it.each([
     undefined,
     usageFor(shared.id, 0.8, { certainty: "unknown" }),

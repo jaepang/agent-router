@@ -13,17 +13,26 @@ export function primaryQuota(
   const resets: string[] = [];
   const states = ["codex", "claude-code"].map((agent) => {
     const rows = accounts.filter((a) => a.enabled && a.agent === agent).map((a) => usage[a.id]);
-    if (rows.some((s) => s && isFresh(s, now, maxAgeMs) && (remainingRatio(s) ?? 0) > 0))
-      return "available";
+    const knownRows = rows.filter((snapshot): snapshot is UsageSnapshot => snapshot !== undefined);
     if (
       !rows.length ||
-      rows.some((s) => !s || !isFresh(s, now, maxAgeMs) || remainingRatio(s) === undefined)
+      knownRows.length !== rows.length ||
+      knownRows.some(
+        (snapshot) => !isFresh(snapshot, now, maxAgeMs) || remainingRatio(snapshot) === undefined,
+      )
     )
       return "unknown";
-    if (rows.every((s) => s!.windows.some((w) => w.kind === "weekly" && w.remainingRatio === 0)))
+    // Preserved values are deliberately pessimistic estimates, not evidence of confirmed exhaustion.
+    if (knownRows.some((snapshot) => snapshot.stalePreserved)) return "unknown";
+    if (knownRows.some((snapshot) => (remainingRatio(snapshot) ?? 0) > 0)) return "available";
+    if (
+      knownRows.every((snapshot) =>
+        snapshot.windows.some((w) => w.kind === "weekly" && w.remainingRatio === 0),
+      )
+    )
       return "weekly";
-    for (const s of rows) {
-      for (const w of s!.windows) {
+    for (const snapshot of knownRows) {
+      for (const w of snapshot.windows) {
         if (
           w.kind !== "weekly" &&
           w.remainingRatio === 0 &&

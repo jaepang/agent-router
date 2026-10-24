@@ -66,6 +66,19 @@ describe("freshness", () => {
     expect(isFresh(usage(0.9, { expiresAt: "2026-09-17T08:59:00.000Z" }), now)).toBe(false);
     expect(isFresh(usage(0.9), now)).toBe(true);
   });
+  it("accepts preserved snapshots only before expiry with a positive max age and non-future observation", () => {
+    const preserved = usage(0.9, {
+      stalePreserved: true,
+      collectedAt: "2026-09-17T08:30:00.001Z",
+      expiresAt: "2026-09-17T09:01:00.001Z",
+    });
+    expect(isFresh(preserved, now, 1)).toBe(true);
+    expect(isFresh(usage(0.9, { ...preserved, expiresAt: now.toISOString() }), now, 1)).toBe(false);
+    expect(isFresh(preserved, now, 0)).toBe(false);
+    expect(
+      isFresh(usage(0.9, { ...preserved, collectedAt: "2026-09-17T09:01:00.001Z" }), now, 1),
+    ).toBe(false);
+  });
 });
 
 describe("eligibility", () => {
@@ -101,6 +114,21 @@ describe("eligibility", () => {
     expect(result.eligible).toBe(false);
     expect(result.reason).toBe("below-reserve");
     expect(result.projectedRemainingRatio).toBeCloseTo(0.39);
+  });
+
+  it("applies the reserve floor to conservatively preserved usage", () => {
+    const result = evaluateEligibility({
+      account: shared,
+      model: sharedModel,
+      usage: usage(0.5, {
+        stalePreserved: true,
+        collectedAt: "2026-09-17T08:30:00.000Z",
+        expiresAt: "2026-09-17T10:00:00.000Z",
+      }),
+      estimatedCostRatio: 0.11,
+      now,
+    });
+    expect(result).toMatchObject({ eligible: false, reason: "below-reserve" });
   });
 
   it("allows personal accounts to consume below the 40% shared reserve", () => {

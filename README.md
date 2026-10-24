@@ -258,8 +258,11 @@ Claude Code passes to its status line:
 
 Either window may be missing, and a window whose reset time has passed counts as fully
 available. An exact observation older than the configured cache age is retained only while
-both reset times remain in the future; the router marks it preserved and applies a 10 percentage
-point used-quota safety margin to each window.
+both reset times remain in the future and remain within their normal windows (five hours and seven
+days respectively). The router marks it preserved for at most about five hours (the earlier reset)
+and applies the `CLAUDE_STALE_USED_MARGIN` 10 percentage-point used-quota safety margin to each
+window. Usage can therefore be underestimated by up to that margin while preserved; the margin
+never itself proves a non-exhausted window is empty.
 
 **Codex:** `~/.codex/statusline-quota-cache.json`
 
