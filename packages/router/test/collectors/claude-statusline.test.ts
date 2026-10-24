@@ -2,8 +2,13 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createClaudeStatuslineCollector } from "../../src/collectors/anthropic/claude-statusline-collector.js";
-import { shared } from "../cli/fixtures.js";
+import {
+  CLAUDE_STALE_USED_MARGIN,
+  createClaudeStatuslineCollector,
+} from "../../src/collectors/anthropic/claude-statusline-collector.js";
+import { evaluateEligibility } from "../../src/policy/eligibility.js";
+import { primaryQuota } from "../../src/policy/primary-quota.js";
+import { claudeModel, codexPersonal, shared, usageFor } from "../cli/fixtures.js";
 
 const nowMs = Date.parse("2026-09-17T10:00:00.000Z");
 const nowSec = nowMs / 1000;
@@ -49,6 +54,28 @@ describe("claude status line quota collector", () => {
       },
     ]);
     expect(Date.parse(snapshot.expiresAt)).toBeGreaterThan(nowMs);
+    expect(snapshot.stalePreserved).toBeUndefined();
+  });
+
+  it("preserves a stale exact cache conservatively until its earliest reset", async () => {
+    const fiveHourReset = nowSec + 2 * 3600;
+    const weeklyReset = nowSec + 5 * 86400;
+    const snapshot = await collect(
+      cacheFile({
+        at: nowSec - 31 * 60,
+        certainty: "exact",
+        five_hour: { used_percentage: 22, resets_at: fiveHourReset },
+        seven_day: { used_percentage: 40, resets_at: weeklyReset },
+      }),
+    );
+
+    expect(CLAUDE_STALE_USED_MARGIN).toBe(0.1);
+    expect(snapshot).toMatchObject({ certainty: "estimated", stalePreserved: true });
+    expect(snapshot.windows).toMatchObject([
+      { kind: "five-hour", usedRatio: 0.32, remainingRatio: 0.68 },
+      { kind: "weekly", usedRatio: 0.5, remainingRatio: 0.5 },
+    ]);
+    expect(snapshot.expiresAt).toBe(new Date(fiveHourReset * 1000).toISOString());
   });
 
   it("does not invent recovery after a reset without a new observation", async () => {
@@ -85,9 +112,93 @@ describe("claude status line quota collector", () => {
           seven_day: { used_percentage: 10, resets_at: nowSec + 86400 },
         }),
     ],
+    [
+      "the stale exact cache has a five-hour reset in the past",
+      () =>
+        cacheFile({
+          at: nowSec - 31 * 60,
+          certainty: "exact",
+          five_hour: { used_percentage: 10, resets_at: nowSec - 1 },
+          seven_day: { used_percentage: 10, resets_at: nowSec + 86400 },
+        }),
+    ],
+    [
+      "the stale exact cache has a weekly reset in the past",
+      () =>
+        cacheFile({
+          at: nowSec - 31 * 60,
+          certainty: "exact",
+          five_hour: { used_percentage: 10, resets_at: nowSec + 3600 },
+          seven_day: { used_percentage: 10, resets_at: nowSec - 1 },
+        }),
+    ],
+    [
+      "the stale cache is not explicitly exact",
+      () =>
+        cacheFile({
+          at: nowSec - 31 * 60,
+          certainty: "estimated",
+          five_hour: { used_percentage: 10, resets_at: nowSec + 3600 },
+          seven_day: { used_percentage: 10, resets_at: nowSec + 86400 },
+        }),
+    ],
+    [
+      "the stale cache has no certainty",
+      () =>
+        cacheFile({
+          at: nowSec - 31 * 60,
+          five_hour: { used_percentage: 10, resets_at: nowSec + 3600 },
+          seven_day: { used_percentage: 10, resets_at: nowSec + 86400 },
+        }),
+    ],
+    [
+      "the stale exact cache is missing a reset time",
+      () =>
+        cacheFile({
+          at: nowSec - 31 * 60,
+          certainty: "exact",
+          five_hour: { used_percentage: 10 },
+          seven_day: { used_percentage: 10, resets_at: nowSec + 86400 },
+        }),
+    ],
   ])("returns unknown usage when %s", async (_label, makePath) => {
     const snapshot = await collect(makePath());
     expect(snapshot.certainty).toBe("unknown");
     expect(snapshot.windows.every((window) => window.remainingRatio === undefined)).toBe(true);
+  });
+
+  it("keeps preserved Claude usage eligible without opening Cursor", async () => {
+    const snapshot = await collect(
+      cacheFile({
+        at: nowSec - 31 * 60,
+        certainty: "exact",
+        five_hour: { used_percentage: 20, resets_at: nowSec + 3600 },
+        seven_day: { used_percentage: 40, resets_at: nowSec + 86400 },
+      }),
+    );
+    const policyNow = new Date(nowMs);
+    expect(
+      evaluateEligibility({
+        account: shared,
+        model: claudeModel,
+        usage: snapshot,
+        estimatedCostRatio: 0,
+        now: policyNow,
+      }),
+    ).toMatchObject({ eligible: true });
+    const quota = primaryQuota(
+      [codexPersonal, shared],
+      {
+        [codexPersonal.id]: usageFor(codexPersonal.id, 0, {
+          windows: [{ kind: "weekly", remainingRatio: 0 }],
+          collectedAt: policyNow.toISOString(),
+          expiresAt: new Date(nowMs + 60_000).toISOString(),
+        }),
+        [shared.id]: snapshot,
+      },
+      policyNow,
+    );
+    expect(quota).toMatchObject({ cursorAllowed: false, status: "quota-wait" });
+    expect(quota.reason).toContain("claude-code=available");
   });
 });

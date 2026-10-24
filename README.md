@@ -257,7 +257,9 @@ Claude Code passes to its status line:
 ```
 
 Either window may be missing, and a window whose reset time has passed counts as fully
-available.
+available. An exact observation older than the configured cache age is retained only while
+both reset times remain in the future; the router marks it preserved and applies a 10 percentage
+point used-quota safety margin to each window.
 
 **Codex:** `~/.codex/statusline-quota-cache.json`
 

@@ -36,5 +36,6 @@ export function formatAccountQuota(snapshot: UsageSnapshot): string {
   if (windows.length === 0) {
     return `unknown (${snapshot.source})`;
   }
-  return `${windows.join(", ")} (${snapshot.certainty} ${snapshot.source}, as of ${snapshot.collectedAt})`;
+  const preserved = snapshot.stalePreserved ? ", preserved past cache age" : "";
+  return `${windows.join(", ")} (${snapshot.certainty} ${snapshot.source}${preserved}, as of ${snapshot.collectedAt})`;
 }

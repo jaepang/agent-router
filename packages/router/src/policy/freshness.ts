@@ -8,6 +8,9 @@ export function isFresh(
   maxAgeMs = DEFAULT_USAGE_MAX_AGE_MS,
 ): boolean {
   const age = now.getTime() - Date.parse(snapshot.collectedAt);
+  if (snapshot.stalePreserved) {
+    return Date.parse(snapshot.expiresAt) > now.getTime();
+  }
   return (
     Number.isFinite(maxAgeMs) &&
     maxAgeMs > 0 &&
