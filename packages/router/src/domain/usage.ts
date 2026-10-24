@@ -35,6 +35,8 @@ export const UsageSnapshotSchema = z.object({
   source: UsageSourceSchema,
   certainty: UsageCertaintySchema,
   expiresAt: z.iso.datetime(),
+  // A Claude status-line observation retained past its usual cache age, only until its reset.
+  stalePreserved: z.boolean().optional(),
   activeReservationRatio: RatioSchema,
 });
 

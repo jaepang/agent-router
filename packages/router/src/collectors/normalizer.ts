@@ -11,6 +11,7 @@ export function normalizeUsage(input: {
   source: UsageSnapshot["source"];
   certainty: UsageSnapshot["certainty"];
   expiresAt: string;
+  stalePreserved?: boolean;
   activeReservationRatio?: number;
 }): UsageSnapshot {
   return UsageSnapshotSchema.parse({

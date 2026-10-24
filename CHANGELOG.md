@@ -61,6 +61,10 @@ and released under a single tag.
 
 ### Fixed
 
+- Claude's exact status-line quota cache remains a conservatively estimated, marked-preserved
+  observation for at most about five hours (until its earliest reset) instead of becoming
+  unavailable solely after 30 minutes. The `CLAUDE_STALE_USED_MARGIN` 10 percentage-point safety
+  margin can underestimate remaining quota during that period, but cannot prove exhaustion.
 - A run without `--worktree` now opens its pane in the directory `router run` was started
   from (`herdr pane split --cwd`). Previously the pane inherited the directory of the pane
   it split, so a reused `router-anchor` workspace sitting in another repository started the

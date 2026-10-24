@@ -7,6 +7,7 @@ import { createDefaultRunDeps } from "../../src/commands/runtime.js";
 import type { UsageCollector } from "../../src/collectors/types.js";
 import { openDatabase } from "../../src/store/database.js";
 import { UsageRepository } from "../../src/store/usage-repository.js";
+import { formatAccountQuota } from "../../src/presentation/quota.js";
 import { personal, usageFor } from "../cli/fixtures.js";
 
 function homeWithAccount(): string {
@@ -33,6 +34,13 @@ function homeWithAccount(): string {
 }
 
 describe("usageRefresh", () => {
+  it("labels preserved account quota in the presentation", () => {
+    expect(
+      formatAccountQuota(
+        usageFor(personal.id, 0.8, { stalePreserved: true, certainty: "estimated" }),
+      ),
+    ).toContain("preserved past cache age");
+  });
   it("prints local-session facts on dry-run and does not persist", async () => {
     const persist = vi.fn();
     const snapshot = usageFor(personal.id, 0.8, {
